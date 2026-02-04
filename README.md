@@ -1,3 +1,6 @@
+## 🚀 Live Demo
+https://opportunity-gap-analyzer-nhljuv7itcuaylklistpbo.streamlit.app/
+
 #  AI Opportunity Gap Analyzer
 
 ##  Overview
