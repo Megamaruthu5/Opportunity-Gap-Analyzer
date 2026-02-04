@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import streamlit as st
 from resume_parser import extract_text_from_pdf, extract_text_from_docx, extract_skills_from_resume
 from utils import get_skills_for_role
@@ -41,6 +42,18 @@ if st.button("Analyze", key="analyze_button"):
 
         st.subheader("Missing Skills")
         st.write(missing)
+
+        st.subheader("Skill Gap Overview")
+
+        labels = ["Matched Skills", "Missing Skills"]
+        values = [len(matched), len(missing)]
+
+        fig = plt.figure()
+        plt.bar(labels, values)
+        plt.title("Skill Gap Analysis")
+        plt.ylabel("Number of Skills")
+
+        st.pyplot(fig)
 
     else:
         st.warning("Please upload resume")
