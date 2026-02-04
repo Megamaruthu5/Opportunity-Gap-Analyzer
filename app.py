@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from github_analyzer import analyze_github_profile
 from resume_parser import extract_text_from_pdf, extract_text_from_docx, extract_skills_from_resume
-from utils import get_skills_for_role
-from gap_engine import analyze_skill_gap
+from utils import get_skills_for_role, calculate_github_score
+from gap_engine import analyze_skill_gap, calculate_career_readiness, generate_recommendations
 from job_roles_data import job_roles
 
 st.title("AI Opportunity Gap Analyzer")
@@ -76,6 +76,19 @@ if st.button("Analyze", key="analyze_button"):
                 st.write(github_data["languages"])
             else:
                 st.warning("Invalid GitHub username")
+
+        github_score = calculate_github_score(github_data) if github_username else 0
+        career_score = calculate_career_readiness(score, github_score)
+
+        st.divider()
+        st.subheader("Career Readiness Score")
+        st.metric(label="Overall Readiness", value=f"{career_score}%")
+
+        st.subheader("AI Recommendations")
+        recommendations = generate_recommendations(missing, github_score)
+
+        for rec in recommendations:
+            st.write("•", rec)
 
     else:
         st.warning("Please upload resume")
