@@ -27,3 +27,20 @@ SKILL_DATABASE = [
     "Seaborn"
 ]
 
+def calculate_github_score(github_data):
+    if not github_data:
+        return 0
+
+    score = 0
+
+    # Repo contribution
+    score += min(github_data["total_repos"] * 5, 40)
+
+    # Stars contribution
+    score += min(github_data["total_stars"] * 2, 30)
+
+    # Language diversity
+    score += min(len(github_data["languages"]) * 5, 30)
+
+    return min(score, 100)
+
