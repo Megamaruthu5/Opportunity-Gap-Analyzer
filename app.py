@@ -60,3 +60,11 @@ if st.button("Analyze", key="analyze_button"):
 
     else:
         st.warning("Please upload resume")
+
+from github_analyzer import analyze_github_profile
+
+username = input("Enter GitHub username: ")
+data = analyze_github_profile(username)
+
+print(data)
+
