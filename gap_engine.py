@@ -14,3 +14,6 @@ def analyze_skill_gap(user_skills, job_skills):
     match_score = (len(matched) / len(job_skills)) * 100
 
     return matched, missing, match_score
+
+def calculate_career_readiness(resume_score, github_score):
+    return round((resume_score * 0.6) + (github_score * 0.4), 2)
