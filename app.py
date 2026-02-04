@@ -1,9 +1,12 @@
-from utils import get_skills_for_role
+from resume_parser import extract_skills_from_resume
 
-role = input("Enter job role: ")
+resume_text = """
+I have experience in Python, Machine Learning and Data Visualization.
+I also worked with Pandas and GitHub.
+"""
 
-skills = get_skills_for_role(role)
+skills = extract_skills_from_resume(resume_text)
 
-print("Required Skills:")
+print("Extracted Skills:")
 for skill in skills:
     print("-", skill)
