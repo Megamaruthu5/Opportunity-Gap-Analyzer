@@ -1,95 +1,1111 @@
-import matplotlib.pyplot as plt
 import streamlit as st
-from github_analyzer import analyze_github_profile
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
+from datetime import datetime
+from html import escape as html_escape
+import re
+import requests
+import time
+
+from github_analyzer import analyze_github_profile, analyze_github_with_ai
 from resume_parser import extract_text_from_pdf, extract_text_from_docx, extract_skills_from_resume
 from utils import get_skills_for_role, calculate_github_score
-from gap_engine import analyze_skill_gap, calculate_career_readiness, generate_recommendations
+from gap_engine import (
+    analyze_skill_gap, 
+    calculate_career_readiness, 
+    generate_recommendations, 
+    calculate_resume_quality, 
+    calculate_experience_level,
+    calculate_ai_proficiency,
+    analyze_resume_impact,
+    get_detailed_recommendations,
+    ai_resume_audit,
+    generate_learning_roadmap
+)
 from job_roles_data import job_roles
 
-st.title("AI Opportunity Gap Analyzer")
+# Page Config
+st.set_page_config(page_title="AI Opportunity Gap Analyzer", layout="wide", page_icon="🚀", initial_sidebar_state="expanded")
 
-# Job role dropdown
-role = st.selectbox("Select Target Job Role", list(job_roles.keys()))
+# --- MODERN PROFESSIONAL UI (STRIPE-LIKE) ---
+st.markdown("""
+    <style>
+    /* Global Font & Colors */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
+    
+    :root {
+        --primary-color: #4F46E5; /* Indigo 600 */
+        --secondary-color: #10B981; /* Emerald 500 */
+        --background-color: #F8FAFC; /* Slate 50 */
+        --card-bg: #FFFFFF;
+        --text-color: #1E293B; /* Slate 800 */
+        --text-muted: #64748B; /* Slate 500 */
+        --border-color: #E2E8F0; /* Slate 200 */
+    }
 
-# Resume input
-uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
+    html, body, [class*="css"] {
+        font-family: 'Manrope', sans-serif;
+        color: var(--text-color);
+        background-color: var(--background-color);
+    }
+    
+    /* Main Container */
+    .stApp {
+        background-color: var(--background-color);
+        background-image: radial-gradient(#E2E8F0 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+    
+    /* Headings */
+    h1, h2, h3 {
+        font-family: 'Sora', sans-serif;
+        color: var(--text-color);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+    }
+    
+    h1 {
+        background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
 
-# GitHub input
-github_username = st.text_input("Enter GitHub Username")
+    /* Cards */
+    .feature-card {
+        background-color: var(--card-bg);
+        padding: 1.5rem;
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        transition: transform 0.2s, box-shadow 0.2s;
+        margin-bottom: 1rem;
+        height: 100%;
+    }
+    .feature-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        border-color: var(--primary-color);
+    }
+    
+    /* Metric Typography */
+    .metric-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+    .metric-value {
+        font-size: 2.25rem;
+        font-weight: 700;
+        color: var(--text-color);
+        line-height: 1;
+        margin-bottom: 0.25rem;
+    }
+    .metric-sub {
+        font-size: 0.875rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    /* Custom Button */
+    .stButton > button {
+        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+        color: white;
+        font-weight: 600;
+        border-radius: 12px;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3);
+        transition: all 0.2s ease-in-out;
+        width: 100%;
+    }
+    .stButton > button:hover {
+        box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.5);
+        transform: translateY(-1px);
+    }
+    .stDownloadButton > button {
+        color: #FFFFFF !important;
+    }
+    .stDownloadButton > button:hover {
+        color: #FFFFFF !important;
+    }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: var(--card-bg);
+        border-right: 1px solid var(--border-color);
+    }
+    
+    /* Inputs */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
+        background-color: white !important;
+        border-radius: 10px;
+        border: 1px solid var(--border-color);
+        color: var(--text-color) !important;
+    }
+    .stTextInput input:focus, .stSelectbox div[data-baseweb="select"] > div:focus-within {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+    }
+    .upload-title {
+        font-size: 0.84rem;
+        font-weight: 700;
+        color: #1E293B;
+        margin-bottom: 0.35rem;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        background: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stFileUploaderDropzone"] * {
+        color: #1E293B !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button,
+    [data-testid="stFileUploaderDropzone"] button *,
+    [data-testid="stFileUploaderDropzone"] [role="button"],
+    [data-testid="stFileUploaderDropzone"] [role="button"] * {
+        color: #FFFFFF !important;
+    }
 
-if st.button("Analyze", key="analyze_button"):
+    /* Force Text Colors */
+    [data-testid="stSidebar"] *, [data-testid="stSidebar"] label, [data-testid="stSidebar"] span, [data-testid="stSidebar"] p,
+    .stTextInput label, .stSelectbox label, .stFileUploader label,
+    div[data-testid="stMarkdownContainer"] p, 
+    div[data-testid="stMarkdownContainer"] li {
+        color: var(--text-color) !important;
+    }
 
-    if uploaded_file is not None:
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 16px;
+        background-color: transparent;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-weight: 500;
+        color: var(--text-muted);
+        border: 1px solid transparent;
+        transition: all 0.2s;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--primary-color);
+        background-color: rgba(79, 70, 229, 0.05);
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: #EEF2FF;
+        color: var(--primary-color);
+        border-color: #C7D2FE;
+        font-weight: 600;
+    }
+    .hero-shell {
+        background: linear-gradient(140deg, #EEF2FF 0%, #FFFFFF 55%, #ECFDF5 100%);
+        border: 1px solid #DDE5F2;
+        border-radius: 18px;
+        padding: 2rem;
+        margin-top: 0.75rem;
+        box-shadow: 0 14px 24px -20px rgba(15, 23, 42, 0.35);
+    }
+    .hero-title {
+        font-family: 'Sora', sans-serif;
+        font-size: 1.9rem;
+        font-weight: 800;
+        color: #0B1320 !important;
+        text-shadow: none;
+        margin: 0;
+    }
+    .hero-copy {
+        font-size: 1rem;
+        color: #475569;
+        margin-top: 0.6rem;
+        margin-bottom: 1rem;
+        max-width: 760px;
+    }
+    .hero-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+    }
+    .hero-pill {
+        display: inline-flex;
+        align-items: center;
+        background: #FFFFFF;
+        border: 1px solid #D2DAE8;
+        color: #334155;
+        border-radius: 999px;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+    .hero-subtitle {
+        margin-top: 1.1rem;
+        margin-bottom: 0.55rem;
+        font-size: 0.9rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        color: #1E293B;
+    }
+    .about-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.7rem;
+        margin-top: 0.45rem;
+    }
+    .about-card {
+        background: #FFFFFF;
+        border: 1px solid #D7E1EF;
+        border-radius: 12px;
+        padding: 0.8rem 0.85rem;
+        box-shadow: 0 10px 20px -18px rgba(15, 23, 42, 0.7);
+    }
+    .about-title {
+        margin: 0 0 0.25rem 0;
+        font-size: 0.87rem;
+        font-weight: 800;
+        color: #0F172A;
+    }
+    .about-text {
+        margin: 0;
+        font-size: 0.82rem;
+        line-height: 1.45;
+        color: #475569;
+    }
+    .flow-strip {
+        margin-top: 0.75rem;
+        background: #FFFFFF;
+        border: 1px solid #D7E1EF;
+        border-radius: 12px;
+        padding: 0.7rem 0.8rem;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.55rem;
+    }
+    .flow-step {
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
+        padding: 0.6rem 0.65rem;
+    }
+    .flow-step b {
+        color: #1E3A8A;
+        font-size: 0.8rem;
+    }
+    .flow-step span {
+        display: block;
+        color: #475569;
+        font-size: 0.79rem;
+        margin-top: 0.15rem;
+        line-height: 1.35;
+    }
+    .timeline-wrap {
+        position: relative;
+        margin-top: 0.6rem;
+        max-width: 980px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .timeline-wrap::before {
+        content: "";
+        position: absolute;
+        top: 8px;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 3px;
+        border-radius: 4px;
+        background: linear-gradient(180deg, #C7D2FE 0%, #A7F3D0 100%);
+    }
+    .timeline-step {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr 60px 1fr;
+        align-items: start;
+        margin-bottom: 1rem;
+    }
+    .timeline-step::before {
+        content: "";
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: center;
+        align-self: start;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+        box-shadow: 0 8px 18px -10px rgba(79, 70, 229, 0.7);
+        border: 2px solid #FFFFFF;
+        z-index: 2;
+    }
+    .timeline-dot {
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: center;
+        align-self: start;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        color: #FFFFFF;
+        font-weight: 800;
+        font-size: 0.95rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 3;
+    }
+    .timeline-card {
+        background: #FFFFFF;
+        border: 1px solid #DBE3F3;
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        box-shadow: 0 6px 18px -14px rgba(15, 23, 42, 0.45);
+        position: relative;
+        max-width: 420px;
+    }
+    .timeline-step.left .timeline-card {
+        grid-column: 1;
+        justify-self: end;
+    }
+    .timeline-step.right .timeline-card {
+        grid-column: 3;
+        justify-self: start;
+    }
+    .timeline-step.left .timeline-card::after,
+    .timeline-step.right .timeline-card::after {
+        content: "";
+        position: absolute;
+        top: 12px;
+        width: 18px;
+        height: 2px;
+        background: #C7D2FE;
+    }
+    .timeline-step.left .timeline-card::after {
+        right: -18px;
+    }
+    .timeline-step.right .timeline-card::after {
+        left: -18px;
+    }
+    .timeline-title {
+        margin: 0;
+        color: #020617 !important;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+    .timeline-window {
+        margin-top: 0.2rem;
+        color: #020617 !important;
+        font-weight: 700;
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+    }
+    .timeline-card h4.timeline-title,
+    .timeline-card .timeline-window {
+        color: #020617 !important;
+    }
+    .timeline-actions {
+        margin: 0.6rem 0 0.4rem 0;
+        padding-left: 1rem;
+        color: #334155;
+    }
+    .timeline-actions li {
+        margin: 0.2rem 0;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+    .timeline-output {
+        margin: 0.45rem 0 0 0;
+        padding: 0.5rem 0.65rem;
+        border-radius: 10px;
+        background: #EEF2FF;
+        border: 1px solid #C7D2FE;
+        color: #1E1B4B;
+        font-size: 0.9rem;
+    }
+    .timeline-goal {
+        background: #F8FAFC;
+        border: 1px solid #D8E2F0;
+        border-radius: 12px;
+        padding: 0.8rem 0.95rem;
+        margin-bottom: 1rem;
+        color: #334155;
+        font-size: 0.92rem;
+    }
+    @media (max-width: 900px) {
+        .about-grid,
+        .flow-strip {
+            grid-template-columns: 1fr;
+        }
+        .timeline-wrap {
+            padding-left: 0.2rem;
+            padding-right: 0.2rem;
+        }
+        .timeline-wrap::before {
+            left: 17px;
+            transform: none;
+        }
+        .timeline-step {
+            grid-template-columns: 40px 1fr;
+            margin-bottom: 0.85rem;
+        }
+        .timeline-step::before,
+        .timeline-dot {
+            grid-column: 1;
+        }
+        .timeline-step.left .timeline-card,
+        .timeline-step.right .timeline-card {
+            grid-column: 2;
+            justify-self: stretch;
+            max-width: none;
+        }
+        .timeline-step.left .timeline-card::after,
+        .timeline-step.right .timeline-card::after {
+            left: -18px;
+            right: auto;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-        if uploaded_file.type == "application/pdf":
-            resume_text = extract_text_from_pdf(uploaded_file)
+# --- CACHED FUNCTIONS ---
+@st.cache_data(ttl=3600)
+def cached_extract_pdf(file):
+    return extract_text_from_pdf(file)
 
-        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            resume_text = extract_text_from_docx(uploaded_file)
+@st.cache_data(ttl=3600)
+def cached_extract_docx(file):
+    return extract_text_from_docx(file)
 
-        else:
-            st.error("Unsupported file format")
-            st.stop()
+@st.cache_data(ttl=600)
+def cached_analyze_skills(user_skills, job_skills):
+    return analyze_skill_gap(user_skills, job_skills)
 
-        user_skills = extract_skills_from_resume(resume_text)
-        job_skills = get_skills_for_role(role)
+@st.cache_data(ttl=3600)
+def cached_github_analysis(username):
+    return analyze_github_profile(username)
 
-        matched, missing, score = analyze_skill_gap(user_skills, job_skills)
+@st.cache_data(ttl=3600)
+def cached_github_ai_feedback(username, data):
+    return analyze_github_with_ai(username, data)
 
-        st.success("Analysis Completed")
+@st.cache_data(ttl=3600)
+def cached_ai_resume_audit(text, role):
+    return ai_resume_audit(text, role)
 
-        st.divider()
-        st.metric(label="Career Readiness Score", value=f"{round(score,2)}%")
+@st.cache_data(ttl=3600)
+def cached_ai_recommendations(missing, role):
+    from gap_engine import generate_recommendations
+    return generate_recommendations(missing, role)
 
-        st.subheader("Match Score")
-        st.write(f"{round(score,2)}%")
+@st.cache_data(ttl=3600)
+def cached_ai_roadmap(missing, role):
+    return generate_learning_roadmap(missing, role)
 
-        st.subheader("Matched Skills")
-        st.write(matched)
+# --- HELPER UI FUNCTIONS ---
+def metric_card_html(label, value, subtext="", color="var(--primary-color)"):
+    return f"""
+    <div class="feature-card" style="border-top: 4px solid {color};">
+        <span class="metric-label">{label}</span>
+        <div class="metric-value">{value}</div>
+        <div class="metric-sub">{subtext}</div>
+    </div>
+    """
 
-        st.subheader("Missing Skills")
-        st.write(missing)
+def skill_chip(skill, type="neutral"):
+    colors = {
+        "neutral": ("#F3F4F6", "#374151"),
+        "success": ("#D1FAE5", "#065F46"),
+        "missing": ("#FEE2E2", "#991B1B"),
+        "highlight": ("#E0E7FF", "#4338CA")
+    }
+    bg, text = colors.get(type, colors["neutral"])
+    return f"""
+    <span style="
+        background-color: {bg}; 
+        color: {text}; 
+        padding: 0.25rem 0.75rem; 
+        border-radius: 9999px; 
+        font-size: 0.85rem; 
+        font-weight: 500; 
+        margin-right: 0.5rem; 
+        margin-bottom: 0.5rem; 
+        display: inline-block;
+        border: 1px solid rgba(0,0,0,0.05);
+    ">{skill}</span>
+    """
 
-        st.subheader("Skill Gap Overview")
+def generate_report(role, career_score, missing_skills, recommendations):
+    report = f"""
+    AI CAREER ANALYSIS REPORT
+    -------------------------
+    Target Role: {role}
+    Date: {datetime.now().strftime("%Y-%m-%d")}
+    
+    OVERALL READINESS: {career_score}%
+    
+    MISSING SKILLS:
+    {', '.join(missing_skills) if missing_skills else "None - Great job!"}
+    
+    RECOMMENDATIONS:
+    """
+    for rec in recommendations:
+        report += f"- {rec}\n"
+        
+    return report
 
-        labels = ["Matched Skills", "Missing Skills"]
-        values = [len(matched), len(missing)]
 
-        fig = plt.figure()
-        plt.bar(labels, values)
-        plt.title("Skill Gap Analysis")
-        plt.ylabel("Number of Skills")
+def get_github_recommendations(github_data):
+    if not github_data:
+        return [
+            "Add a GitHub username to unlock profile-based recommendations.",
+            "Publish 2-3 portfolio-ready repositories with clean READMEs.",
+            "Pin your best projects and include setup + demo details."
+        ]
 
-        st.pyplot(fig)
+    recs = []
+    total_repos = int(github_data.get("total_repos", 0))
+    followers = int(github_data.get("followers", 0))
+    total_stars = int(github_data.get("total_stars", 0))
+    languages = github_data.get("languages", {}) or {}
 
-        if github_username:
-            github_data = analyze_github_profile(github_username)
+    if total_repos < 5:
+        recs.append("Push at least 5 public repos aligned to your target role.")
+    if total_stars < 10:
+        recs.append("Improve README clarity and share projects to increase stars and visibility.")
+    if len(languages) < 2:
+        recs.append("Show skill breadth by adding projects in at least 2 relevant languages.")
+    if followers < 10:
+        recs.append("Contribute to open source and stay active weekly to grow followers.")
 
-            if github_data:
-                st.subheader("GitHub Profile Insights")
+    if not recs:
+        recs.append("Keep consistency: 2 quality commits per week and one polished project per month.")
+        recs.append("Add measurable outcomes in project READMEs (latency, accuracy, cost, scale).")
 
-                st.write("Public Repositories:", github_data["total_repos"])
-                st.write("Followers:", github_data["followers"])
-                st.write("Total Stars:", github_data["total_stars"])
+    return recs[:4]
 
-                st.subheader("Languages Used")
-                st.write(github_data["languages"])
-            else:
-                st.warning("Invalid GitHub username")
 
-        github_score = calculate_github_score(github_data) if github_username else 0
-        career_score = calculate_career_readiness(score, github_score)
+def generate_full_report(
+    role,
+    career_score,
+    missing_skills,
+    recommendations,
+    github_username="",
+    github_data=None,
+    github_feedback="",
+):
+    report = f"""
+    AI CAREER ANALYSIS REPORT
+    -------------------------
+    Target Role: {role}
+    Date: {datetime.now().strftime("%Y-%m-%d")}
+    
+    OVERALL READINESS: {career_score}%
+    
+    MISSING SKILLS:
+    {', '.join(missing_skills) if missing_skills else "None - Great job!"}
+    
+    RECOMMENDATIONS:
+    """
+    for rec in recommendations:
+        report += f"- {rec}\n"
 
-        st.divider()
-        st.subheader("Career Readiness Score")
-        st.metric(label="Overall Readiness", value=f"{career_score}%")
-
-        st.subheader("AI Recommendations")
-        recommendations = generate_recommendations(missing, github_score)
-
-        for rec in recommendations:
-            st.write("•", rec)
-
+    report += "\nGITHUB ANALYSIS:\n"
+    if github_data:
+        report += f"- Username: {github_username or 'Provided'}\n"
+        report += f"- Public Repositories: {github_data.get('total_repos', 0)}\n"
+        report += f"- Followers: {github_data.get('followers', 0)}\n"
+        report += f"- Total Stars: {github_data.get('total_stars', 0)}\n"
+        languages = github_data.get("languages", {}) or {}
+        top_langs = ", ".join(list(languages.keys())[:5]) if languages else "Not available"
+        report += f"- Top Languages: {top_langs}\n"
     else:
-        st.warning("Please upload resume")
+        report += "- GitHub profile data not available.\n"
+
+    if github_feedback:
+        report += f"\nAI GITHUB REVIEW:\n{github_feedback}\n"
+
+    report += "\nGITHUB SUGGESTIONS:\n"
+    for item in get_github_recommendations(github_data):
+        report += f"- {item}\n"
+
+    return report
+
+
+def merge_recommendations(primary, fallback, min_items=6):
+    """Merge AI and fallback recommendations and deduplicate."""
+    primary = primary or []
+    fallback = fallback or []
+    merged = []
+    seen = set()
+    for rec in primary + fallback:
+        key = rec.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(rec)
+    return merged[: max(min_items, len(merged))]
+
+
+def _render_timeline_roadmap(roadmap_text):
+    if not roadmap_text:
+        return False
+
+    lines = roadmap_text.splitlines()
+    steps = []
+    current = None
+    goal_parts = []
+    in_goal = False
+
+    def _parse_step_heading(text):
+        patterns = [
+            r"^###\s*Step\s*(\d+)\s*[:\-]\s*(.+)$",
+            r"^\s*Step\s*(\d+)\s*[:\-]\s*(.+)$",
+            r"^###\s*Week\s*(\d+)\s*[:\-]\s*(.+)$",
+            r"^\s*Week\s*(\d+)\s*[:\-]\s*(.+)$",
+            r"^\s*(\d+)\.\s*Step\s*\d*\s*[:\-]\s*(.+)$",
+        ]
+        for pattern in patterns:
+            match = re.match(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1), match.group(2).replace("**", "").strip()
+        return None, None
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+
+        if line.lower().startswith("### goal") or line.lower().startswith("goal:"):
+            in_goal = True
+            continue
+
+        step_num, step_title = _parse_step_heading(line)
+        if step_num and step_title:
+            in_goal = False
+            if current:
+                steps.append(current)
+            current = {
+                "num": step_num,
+                "title": step_title,
+                "actions": [],
+                "output": "",
+            }
+            continue
+
+        if line.startswith("### ") or line.startswith("## "):
+            in_goal = False
+            continue
+
+        if in_goal:
+            goal_parts.append(line.lstrip("- ").replace("**", "").strip())
+            continue
+
+        if not current:
+            continue
+
+        cleaned = line.replace("**", "").strip()
+        if "Output:" in cleaned or "Deliverable:" in cleaned:
+            if "Output:" in cleaned:
+                current["output"] = cleaned.split("Output:", 1)[1].strip()
+            else:
+                current["output"] = cleaned.split("Deliverable:", 1)[1].strip()
+            continue
+
+        if cleaned.startswith("- ") or cleaned.startswith("* "):
+            action_text = cleaned[2:].strip()
+            if action_text and "Output:" not in action_text:
+                current["actions"].append(action_text)
+
+    if current:
+        steps.append(current)
+
+    if not steps:
+        return False
+
+    goal_text = " ".join(goal_parts).strip()
+    goal_html = ""
+    if goal_text:
+        goal_html = f'<div class="timeline-goal"><strong>Goal:</strong> {html_escape(goal_text)}</div>'
+
+    step_blocks = []
+    for idx, step in enumerate(steps):
+        side_class = "left" if idx % 2 == 0 else "right"
+        title = step["title"]
+        window = ""
+        if "(" in title and title.endswith(")"):
+            main_title, suffix = title.rsplit("(", 1)
+            title = main_title.strip()
+            window = suffix[:-1].strip()
+
+        actions_html = "".join(
+            [f"<li>{html_escape(item)}</li>" for item in step["actions"][:3]]
+        )
+        output_text = step["output"] or "Complete this step with a measurable deliverable."
+
+        window_html = f'<div class="timeline-window">{html_escape(window)}</div>' if window else ""
+        step_blocks.append(
+            f'<div class="timeline-step {side_class}">'
+            f'<div class="timeline-dot">{html_escape(step["num"])}</div>'
+            f'<div class="timeline-card">'
+            f'<h4 class="timeline-title">{html_escape(title)}</h4>'
+            f'{window_html}'
+            f'<ul class="timeline-actions">{actions_html}</ul>'
+            f'<p class="timeline-output"><strong>Output:</strong> {html_escape(output_text)}</p>'
+            f'</div>'
+            f'</div>'
+        )
+
+    st.markdown(
+        f'{goal_html}<div class="timeline-wrap">{"".join(step_blocks)}</div>',
+        unsafe_allow_html=True,
+    )
+    return True
+
+# --- SIDEBAR ---
+with st.sidebar:
+    role = st.selectbox("Job Role", list(job_roles.keys()))
+    st.markdown('<div class="upload-title">Resume (PDF/DOCX)</div>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("", type=["pdf", "docx"], label_visibility="collapsed", key="resume_uploader")
+    if uploaded_file is not None:
+        st.session_state.uploaded_resume = uploaded_file
+    github_username = st.text_input("GitHub Username")
+    
+    st.markdown("---")
+    analyze_btn = st.button("Run Analysis", type="primary")
+    
+    st.markdown("""
+        <div style="margin-top:2rem; font-size:0.8rem; color:#9CA3AF;">
+        v3.0 | Modern Pro Edition
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Check Local AI Status
+    try:
+        if requests.get("http://localhost:11434/api/tags", timeout=1).status_code == 200:
+            st.success("🟢 Local AI Active")
+        else:
+            st.warning("⚫ Local AI Offline")
+    except:
+        st.warning("⚫ Local AI Offline")
+
+# --- MAIN CONTENT ---
+# --- SESSION STATE INITIALIZATION ---
+if 'analysis_complete' not in st.session_state:
+    st.session_state.analysis_complete = False
+if 'uploaded_resume' not in st.session_state:
+    st.session_state.uploaded_resume = None
+
+# --- MAIN CONTENT ---
+if not st.session_state.analysis_complete:
+    st.markdown("""
+        <div class="hero-shell">
+            <h2 class="hero-title">Optimize Your Career Path</h2>
+            <p class="hero-copy">
+                Upload your resume and target role to get a complete AI-powered career diagnostic with practical next steps.
+            </p>
+            <div class="hero-row">
+                <span class="hero-pill">Resume Analysis</span>
+                <span class="hero-pill">Role-Based Matching</span>
+                <span class="hero-pill">GitHub Insights</span>
+                <span class="hero-pill">Deep AI Recommendations</span>
+                <span class="hero-pill">Structured Roadmap</span>
+            </div>
+            <div class="hero-subtitle">About This AI Engine</div>
+            <div class="about-grid">
+                <div class="about-card">
+                    <p class="about-title">Profile Understanding</p>
+                    <p class="about-text">Parses your resume content, extracts skills, and evaluates experience signals for your selected role.</p>
+                </div>
+                <div class="about-card">
+                    <p class="about-title">Gap Intelligence</p>
+                    <p class="about-text">Matches your profile against role expectations, identifies critical missing skills, and scores readiness.</p>
+                </div>
+                <div class="about-card">
+                    <p class="about-title">Action Planning</p>
+                    <p class="about-text">Generates targeted projects, deep analysis insights, and a step-by-step roadmap with clear outputs.</p>
+                </div>
+            </div>
+            <div class="flow-strip">
+                <div class="flow-step">
+                    <b>1. Configure</b>
+                    <span>Choose role, upload resume, add GitHub username.</span>
+                </div>
+                <div class="flow-step">
+                    <b>2. Analyze</b>
+                    <span>Run complete AI analysis in one pass.</span>
+                </div>
+                <div class="flow-step">
+                    <b>3. Execute</b>
+                    <span>Follow roadmap and recommendations to close gaps.</span>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+# Processing Logic
+effective_resume = st.session_state.get("uploaded_resume")
+if analyze_btn and effective_resume:
+    try:
+        with st.spinner("Processing Profile..."):
+            # Extraction
+            if effective_resume.type == "application/pdf":
+                resume_text = cached_extract_pdf(effective_resume)
+            else:
+                resume_text = cached_extract_docx(effective_resume)
+                
+            # Analysis
+            user_skills = extract_skills_from_resume(resume_text)
+            job_skills = get_skills_for_role(role)
+            # Hard bypass of cached_analyze_skills: deterministic fast lexical match.
+            user_lower = [s.lower().strip() for s in user_skills]
+            matched = []
+            for js in job_skills:
+                j = js.lower().strip()
+                if any(
+                    j == u
+                    or j in u
+                    or u in j
+                    or bool(set(j.split()) & set(u.split()))
+                    for u in user_lower
+                ):
+                    matched.append(js)
+            missing = [skill for skill in job_skills if skill not in matched]
+            score = (len(matched) / len(job_skills)) * 100 if job_skills else 0
+            
+            resume_quality_score, resume_feedback = calculate_resume_quality(resume_text)
+            experience_level = calculate_experience_level(resume_text)
+            ai_level, ai_level_desc = calculate_ai_proficiency(user_skills)
+            impact_score, impact_feedback = analyze_resume_impact(resume_text)
+            
+            github_data = None
+            github_score = 0
+            github_feedback = None
+            
+            github_username = github_username.strip()
+            if github_username:
+                github_data = cached_github_analysis(github_username)
+                if github_data:
+                    github_score = calculate_github_score(github_data)
+
+            career_score = calculate_career_readiness(score, github_score)
+
+            # Generate complete AI analysis in one run.
+            ai_primary = cached_ai_recommendations(missing, role)
+            ai_fallback = get_detailed_recommendations(missing)
+            ai_recs = merge_recommendations(ai_primary, ai_fallback, min_items=8)
+            ai_roadmap = cached_ai_roadmap(missing, role)
+            ai_audit = cached_ai_resume_audit(resume_text, role)
+            github_feedback = None
+            if github_username and github_data:
+                github_feedback = cached_github_ai_feedback(github_username, github_data)
+            
+            # Save to Session State
+            st.session_state.analysis_complete = True
+            st.session_state.role = role
+            st.session_state.career_score = career_score
+            st.session_state.matched = matched
+            st.session_state.missing = missing
+            st.session_state.score = score
+            st.session_state.resume_quality_score = resume_quality_score
+            st.session_state.resume_feedback = resume_feedback
+            st.session_state.experience_level = experience_level
+            st.session_state.ai_level = ai_level
+            st.session_state.ai_level_desc = ai_level_desc
+            st.session_state.impact_score = impact_score
+            st.session_state.impact_feedback = impact_feedback
+            st.session_state.github_score = github_score
+            st.session_state.ai_recs = ai_recs
+            st.session_state.ai_roadmap = ai_roadmap
+            st.session_state.ai_audit = ai_audit
+            st.session_state.github_data_exists = bool(github_data)
+            st.session_state.github_data = github_data
+            st.session_state.github_feedback = github_feedback
+            st.session_state.github_username = github_username
+            st.session_state.resume_text = resume_text
+            # Refresh immediately so onboarding content is hidden once results are ready.
+            st.rerun()
+    except Exception as exc:
+        st.session_state.analysis_complete = False
+        st.error(f"Processing failed: {exc}")
+
+# Render Results if Analysis Complete
+if st.session_state.analysis_complete:
+    # Retrieve from Session State
+    role = st.session_state.role
+    career_score = st.session_state.career_score
+    matched = st.session_state.matched
+    missing = st.session_state.missing
+    score = st.session_state.score
+    resume_quality_score = st.session_state.resume_quality_score
+    resume_feedback = st.session_state.resume_feedback
+    experience_level = st.session_state.experience_level
+    ai_level = st.session_state.ai_level
+    ai_level_desc = st.session_state.ai_level_desc
+    impact_score = st.session_state.impact_score
+    impact_feedback = st.session_state.impact_feedback
+    github_score = st.session_state.github_score
+    ai_recs = st.session_state.ai_recs
+    ai_audit = st.session_state.ai_audit
+    github_data_exists = st.session_state.github_data_exists
+    github_data = st.session_state.github_data
+    github_feedback = st.session_state.github_feedback
+    github_username = st.session_state.github_username
+    
+    # --- DASHBOARD ---
+    st.markdown(f"## Analysis for **{role}**")
+    
+    # Top Metrics
+    ai_level_parts = ai_level.split(maxsplit=1)
+    ai_level_main = ai_level_parts[0] if ai_level_parts else ai_level
+    ai_level_sub = ai_level_parts[1] if len(ai_level_parts) > 1 else ""
+    c1, c2, c3 = st.columns(3)
+    with c1: st.markdown(metric_card_html("Readiness", f"{career_score}%", "Overall Score", "#2563EB"), unsafe_allow_html=True)
+    with c2: st.markdown(metric_card_html("AI Proficiency", ai_level_main, ai_level_sub, "#7C3AED"), unsafe_allow_html=True)
+    with c3: st.markdown(metric_card_html("GitHub Impact", str(github_score), "Code Quality", "#D97706"), unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Tabs
+    tabs = st.tabs(["Overview", "Skills & Gaps", "Resume", "GitHub", "Roadmap", "Report"])
+    
+    # Tab 1: Overview
+    with tabs[0]:
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.markdown("#### Career Trajectory")
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number", value = career_score,
+                domain = {'x': [0, 1], 'y': [0, 1]},
+                gauge = {
+                    'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "#4F46E5"},
+                    'bar': {'color': "#4F46E5"},
+                    'bgcolor': "white",
+                    'borderwidth': 2,
+                    'bordercolor': "#E2E8F0",
+                    'steps': [
+                        {'range': [0, 50], 'color': "#F1F5F9"},
+                        {'range': [50, 80], 'color': "#E2E8F0"}
+                    ],
+                }
+            ))
+            fig.update_layout(
+                height=300, 
+                margin=dict(t=0,b=0,l=0,r=0),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font={'family': "Outfit, sans-serif"}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.markdown("#### Career Level")
+            st.info(f"**{experience_level}**")
+            st.markdown(f"*{ai_level_desc}*")
+
+        if st.session_state.get("github_feedback"):
+            st.markdown("---")
+            st.markdown("### 🤖 Senior Recruiter Feedback (AI)")
+            st.info(st.session_state.github_feedback)
+
+    # Tab 2: Skills
+    with tabs[1]:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### ✅ Matched Skills")
+            html = "".join([skill_chip(s, "success") for s in matched])
+            st.markdown(html, unsafe_allow_html=True)
+            
+        with c2:
+            st.markdown("#### ⚠️ Missing Skills")
+            html = "".join([skill_chip(s, "missing") for s in missing])
+            st.markdown(html, unsafe_allow_html=True)
+        st.markdown("<br>#### Recommended Projects", unsafe_allow_html=True)
+        if st.session_state.get("ai_recs"):
+            for rec in st.session_state.ai_recs:
+                st.info(rec)
+
+        # Tab 3: Resume
+    with tabs[2]:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Quality Audit")
+            st.metric("Structure Score", f"{resume_quality_score}/100")
+            for f in resume_feedback: st.warning(f)
+        with c2:
+            st.markdown("#### Impact Analysis")
+            st.metric("Impact Score", f"{impact_score}/100")
+            st.progress(impact_score)
+            for f in impact_feedback: st.info(f)
+        if st.session_state.get("ai_audit"):
+            st.markdown("---")
+            st.markdown("### Deep Dive Audit (AI)")
+            st.warning(st.session_state.ai_audit)
+
+    # Tab 4: GitHub
+    with tabs[3]:
+        st.markdown("### GitHub Analysis")
+        if github_data_exists and github_data:
+            g1, g2, g3 = st.columns(3)
+            with g1:
+                st.metric("Public Repos", int(github_data.get("total_repos", 0)))
+            with g2:
+                st.metric("Followers", int(github_data.get("followers", 0)))
+            with g3:
+                st.metric("Total Stars", int(github_data.get("total_stars", 0)))
+
+            langs = github_data.get("languages", {}) or {}
+            if langs:
+                st.markdown("#### Language Footprint")
+                lang_df = pd.DataFrame({"Language": list(langs.keys()), "Repositories": list(langs.values())})
+                st.bar_chart(lang_df.set_index("Language"))
+
+            st.markdown("#### Suggestions")
+            for tip in get_github_recommendations(github_data):
+                st.info(tip)
+
+            if github_feedback:
+                st.markdown("#### AI Reviewer Notes")
+                st.info(github_feedback)
+        else:
+            st.info("No GitHub data found. Enter a valid GitHub username and run analysis again.")
+
+        # Tab 5: Roadmap
+    with tabs[4]:
+        st.markdown("### AI Learning Roadmap")
+        if st.session_state.get("ai_roadmap"):
+            if not _render_timeline_roadmap(st.session_state.ai_roadmap):
+                st.markdown(st.session_state.ai_roadmap)
+        else:
+            st.info("No roadmap generated yet.")
+
+    # Tab 6: Export
+    with tabs[5]:
+        st.markdown("### Download Report")
+        report_txt = generate_full_report(
+            role=role,
+            career_score=career_score,
+            missing_skills=missing,
+            recommendations=ai_recs,
+            github_username=github_username,
+            github_data=github_data,
+            github_feedback=github_feedback,
+        )
+        st.download_button("Download PDF/Text Report", report_txt, file_name="career_report.txt")
+elif analyze_btn and not effective_resume:
+    st.warning("Please upload a resume to begin.")
+
+
+
+
+
+
+
+
+
+
 
